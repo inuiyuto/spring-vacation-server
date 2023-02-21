@@ -68,10 +68,10 @@ def c2spull(json):
     divnum = 0
     #書き方違う?
     username = json["username"]
-    deltaX = json["pullInfo"]["deltaX"]
-    deltaY = json["pullInfo"]["deltaY"]
+    directionX = json["pullInfo"]["directionX"]
+    directionY = json["pullInfo"]["directionY"]
     rotation = json["pullInfo"]["rotation"]
-    emit("s2cSharePull", {"user": username ,"PullInfo": {"deltaX": deltaX , "deltaY": deltaY , "rotation": rotation}}, broadcast=True)
+    emit("s2cSharePull", {"user": username ,"PullInfo": {"directionX": directionX , "directionY": directionY , "rotation": rotation}}, broadcast=True)
 
 @socketio.on("c2sInformPositions")
 def c2sinformpositions(json):
