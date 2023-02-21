@@ -7,6 +7,13 @@ app.config["SECRET_KEY"] = "secret!"
 CORS(app, resources={r"/*":{"origins":"*"}})
 socketio = SocketIO(app, cors_allowed_origins="*")
 users = []
+OKusers = []
+alive = 0
+OKnum = 0
+nextUsernum = 0
+positionX = []
+positionY = []
+positionZ = []
 
 @app.route("/")
 def hello():
@@ -18,28 +25,74 @@ def connected():
     print("Connected")
     emit("connect", {"data":f"id: {request.sid} is connected"})
 
-@socketio.on("requestJoin")
-def requestJoin(json):
-    username = json["user"]
+@socketio.on("c2sRequestJoin")
+def c2srequestjoin(json):
+    username = json["username"]
     users.append(username)
     for u in users:
         print(u)
-    if len(users) == 2:
-        emit("informBeginning", {"users": [{"user": username} for username in users]}, broadcast=True)
-
-@socketio.on("changeTurn")
-def changeTurn(json):
-    print(json)
-    nextWord = json["nextWord"]
-    username = json["user"]
-    emit("changeTurn", {"nextWord": nextWord, "user": username}, broadcast=True)
+    emit("s2cInformUsers", {"users": [{"user": username} for username in users]}, broadcast=True)
 
 @socketio.on("disconnect")
-def disconnected():
+def disconnected(json):
     """event listener when client disconnects to the server"""
     print("user disconnected")
-    users.clear()
-    emit("disconnect",f"user {request.sid} disconnected",broadcast=True)
+    username = json["username"]
+    if username in OKusers :
+        OKnum -= 1
+        OKusers.remove(username)
+    users.remove(username)
+    emit("s2cInformUsers", {"users": [{"user": username} for username in users]}, broadcast=True)
+
+@socketio.on("c2sOK")
+def c2sok(json):
+    username = json["username"]
+    if not username in OKusers :
+        OKusers.append(username)
+        OKnum += 1
+    if OKnum == len(users) :
+        alive = OKnum
+        firstUser = users[nextUsernum]
+        nextUsernum += 1
+        while True :
+            if nextUsernum > len(users) :
+                nextUsernum = 0
+            elif users[nextUsernum] == "NoName":
+                nextUsernum += 1
+            else :
+                break       
+        emit("s2cStart", {"users": [{"user": username} for username in users], "firstUser": firstUser}, broadcast=True)
+
+@socketio.on("c2sPull")
+def c2spull(json):
+    divnum = 0
+    #書き方違う?
+    username = json["username"]
+    strength = json["pullInfo"]["strength"]
+    angle = json["pullInfo"]["angle"]
+    rotation = json["pullInfo"]["rotation"]
+    emit("s2cSharePull", {"user": username ,"PullInfo": {"strength": strength , "angle": angle , "rotation": rotation}}, broadcast=True)
+
+@socketio.on("c2sInformPositions")
+def c2sinformpositions(json):
+    positions = json["positions"]
+    divnum += 1
+    i = 0
+    while True :
+        i += 1
+        #書き方違う?
+        for position in positions :
+            username = position["user"]
+            l = users.index(username)
+            positionX[l] = position["positionX"]
+            positionY[l] = position["positionY"]
+            positionZ[l] = position["positionZ"]
+        if i == alive :
+            break
+    if divnum == len(users) :
+        #平均をとる処理、死んだ処理、ゲーム終了の処理、次の人を決める処理
+        emit("s2cAveragePositions", {"user": username ,"PullInfo": {"strength": strength , "angle": angle , "rotation": rotatinon}}, broadcast=True)
+
 
 if __name__ == "__main__":
     socketio.run(app, debug=True, port=5001)
