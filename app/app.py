@@ -10,6 +10,7 @@ users = []
 OKusers = []
 alive = 0
 OKnum = 0
+informnum = 0
 nextUsernum = 0
 positionX = []
 positionY = []
@@ -51,21 +52,21 @@ def c2sok(json):
         OKusers.append(username)
         OKnum += 1
     if OKnum == len(users) :
-        alive = OKnum
+        #alive = OKnum
+        informnum = 0
         firstUser = users[nextUsernum]
         nextUsernum += 1
         while True :
             if nextUsernum > len(users) :
                 nextUsernum = 0
-            elif users[nextUsernum] == "NoName":
-                nextUsernum += 1
+            #elif 次の人が死んでいた場合
+                #nextUsernum += 1
             else :
-                break       
+                break
         emit("s2cStart", {"users": [{"user": username} for username in users], "firstUser": firstUser}, broadcast=True)
 
 @socketio.on("c2sPull")
 def c2spull(json):
-    divnum = 0
     #書き方違う?
     username = json["username"]
     directionX = json["pullInfo"]["directionX"]
@@ -75,8 +76,9 @@ def c2spull(json):
 
 @socketio.on("c2sInformPositions")
 def c2sinformpositions(json):
+    #書き方違う?
     positions = json["positions"]
-    divnum += 1
+    informnum += 1
     i = 0
     while True :
         i += 1
@@ -87,11 +89,36 @@ def c2sinformpositions(json):
             positionX[l] = position["positionX"]
             positionY[l] = position["positionY"]
             positionZ[l] = position["positionZ"]
-        if i == alive :
+        if i == len(users) :
             break
-    if divnum == len(users) :
-        #平均をとる処理、死んだ処理、ゲーム終了の処理、次の人を決める処理
-        emit("s2cAveragePositions", {"user": username ,"PullInfo": {"strength": strength , "angle": angle , "rotation": rotatinon}}, broadcast=True)
+
+    if informnum == len(users) :
+        i = 0
+        while True :
+            positionX[i] = positionX[i] / len(users)
+            positionY[i] = positionY[i] / len(users)
+            positionZ[i] = positionZ[i] / len(users)
+            i += 1
+            if i == len(users) :
+                break
+        
+        #死んだ処理、ゲーム終了と結果送信の処理
+
+        #次の人を決める
+        nextUser = users[nextUsernum] 
+        nextUsernum += 1
+        while True :
+            if nextUsernum > len(users) :
+                nextUsernum = 0
+            #elif 次の人が死んでいた場合
+                #nextUsernum += 1
+            else :
+                break
+        #書き方違う?
+        emit("s2cAveragePositions", {"positions": 
+                                     [{"user": username for username in users}, {"positionX": positionX for positionX in positionX} , 
+                                      {"potisionY": positionY for positionY in positionY} , {"positionZ": positionZ for positionZ in positionZ}],
+                                        "nextUser": nextUser }, broadcast=True)
 
 
 if __name__ == "__main__":
