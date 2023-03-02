@@ -15,6 +15,7 @@ nextUsernum = 0
 positionX = []
 positionY = []
 positionZ = []
+#TODO : declare global for global variable(primitive)(参照ならできる)
 
 @app.route("/")
 def hello():
@@ -47,6 +48,7 @@ def disconnected(json):
 
 @socketio.on("c2sOK")
 def c2sok(json):
+    global OKnum, nextUsernum
     username = json["username"]
     if not username in OKusers :
         OKusers.append(username)
