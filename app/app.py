@@ -8,10 +8,9 @@ CORS(app, resources={r"/*":{"origins":"*"}})
 socketio = SocketIO(app, cors_allowed_origins="*")
 users = []
 OKusers = []
-alive = 0
 OKnum = 0
-informnum = 0
-nextUsernum = 0
+informNum = 0
+nextUserNum = 0
 positionX = []
 positionY = []
 positionZ = []
@@ -25,52 +24,53 @@ def hello():
 def connected():
     print(request.sid)
     print("Connected")
-    emit("connect", {"data":f"id: {request.sid} is connected"})
-
-@socketio.on("c2sRequestJoin")
-def c2srequestjoin(json):
-    username = json["username"]
-    users.append(username)
-    for u in users:
-        print(u)
-    emit("s2cInformUsers", {"users": [{"user": username} for username in users]}, broadcast=True)
 
 @socketio.on("disconnect")
 def disconnected(json):
+    #TODO: ぶち切ってくる場合usernameがないのでrequest.sidで名前とのmapを用意しておいて、適宜削除する必要あり
+    global OKnum
     """event listener when client disconnects to the server"""
     print("user disconnected")
-    username = json["username"]
+    username = json["user"]
     if username in OKusers :
         OKnum -= 1
         OKusers.remove(username)
     users.remove(username)
     emit("s2cInformUsers", {"users": [{"user": username} for username in users]}, broadcast=True)
 
+@socketio.on("c2sRequestJoin")
+def c2srequestjoin(json):
+    print(json)
+    username = json["user"]
+    users.append(username)
+    emit("s2cInformUsers", {"users": [{"user": username} for username in users]}, broadcast=True)
+
+
 @socketio.on("c2sOK")
 def c2sok(json):
-    global OKnum, nextUsernum
-    username = json["username"]
-    if not username in OKusers :
+    print(json)
+    global OKnum, nextUserNum
+    username = json["user"]
+    if username not in OKusers :
         OKusers.append(username)
         OKnum += 1
     if OKnum == len(users) :
-        #alive = OKnum
-        informnum = 0
-        firstUser = users[nextUsernum]
-        nextUsernum += 1
+        firstUser = users[nextUserNum]
+        nextUserNum += 1
         while True :
-            if nextUsernum > len(users) :
-                nextUsernum = 0
+            if nextUserNum > len(users) :
+                nextUserNum = 0
             #elif 次の人が死んでいた場合
-                #nextUsernum += 1
+                #nextUserNum += 1
             else :
                 break
         emit("s2cStart", {"users": [{"user": username} for username in users], "firstUser": firstUser}, broadcast=True)
 
 @socketio.on("c2sPull")
 def c2spull(json):
+    print(json)
     #書き方違う?
-    username = json["username"]
+    username = json["user"]
     directionX = json["pullInfo"]["directionX"]
     directionY = json["pullInfo"]["directionY"]
     rotation = json["pullInfo"]["rotation"]
@@ -78,9 +78,11 @@ def c2spull(json):
 
 @socketio.on("c2sInformPositions")
 def c2sinformpositions(json):
+    print(json)
     #書き方違う?
+    global informNum
     positions = json["positions"]
-    informnum += 1
+    informNum += 1
     i = 0
     while True :
         i += 1
@@ -94,7 +96,7 @@ def c2sinformpositions(json):
         if i == len(users) :
             break
 
-    if informnum == len(users) :
+    if informNum == len(users) :
         i = 0
         while True :
             positionX[i] = positionX[i] / len(users)
@@ -107,13 +109,13 @@ def c2sinformpositions(json):
         #死んだ処理、ゲーム終了と結果送信の処理
 
         #次の人を決める
-        nextUser = users[nextUsernum] 
-        nextUsernum += 1
+        nextUser = users[nextUserNum] 
+        nextUserNum += 1
         while True :
-            if nextUsernum > len(users) :
-                nextUsernum = 0
+            if nextUserNum > len(users) :
+                nextUserNum = 0
             #elif 次の人が死んでいた場合
-                #nextUsernum += 1
+                #nextUserNum += 1
             else :
                 break
         #書き方違う?
