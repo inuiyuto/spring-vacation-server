@@ -44,7 +44,6 @@ def hello():
 
 @socketio.on("connect")
 def connected():
-    print(request.sid)
     print("Connected")
 
 @socketio.on("disconnect")
@@ -52,7 +51,6 @@ def disconnected(json):
     #TODO: ぶち切ってくる場合usernameがないのでrequest.sidで名前とのmapを用意しておいて、適宜削除する必要あり
     global OKCount
     """event listener when client disconnects to the server"""
-    print("user disconnected")
     username = json["user"]
     users.remove(username)
     emit("s2cInformUsers", {"users": [{"user": username} for username in users]}, broadcast=True)
@@ -66,28 +64,39 @@ def c2sRequestJoin(json):
 
 
 @socketio.on("c2sOK")
-def c2sok(json):
+def c2sOK(json):
     print(json)
     global OKCount, nextUserIndex
     OKCount += 1
+    print(f"okcount: {OKCount}, users: {users}")
     if OKCount == len(users) :
         firstUser = users[nextUserIndex]
         emit("s2cStart", {"users": [username for username in users], "firstUser": firstUser}, broadcast=True)
 
 @socketio.on("c2sPull")
-def c2spull(json):
+def c2sPull(json):
     print(json)
     username = json["user"]
     directionX = json["pullInfo"]["directionX"]
     directionY = json["pullInfo"]["directionY"]
     rotation = json["pullInfo"]["rotation"]
-    emit("s2cSharePull", {"user": username ,"PullInfo": {"directionX": directionX , "directionY": directionY , "rotation": rotation}}, broadcast=True)
+    emit("s2cSharePull", {"user": username ,"pullInfo": {"directionX": directionX , "directionY": directionY , "rotation": rotation}}, broadcast=True)
 
 @socketio.on("c2sInformPositions")
-def c2sinformpositions(json):
+def c2sInformPositions(json):
     print(json)
-    global informCount
+    global informCount, nextUserIndex
+
     informCount += 1
+    if informCount == len(users):
+        informCount = 0
+        nextUserIndex = (nextUserIndex + 1) % len(users)
+        while nextUserIndex in skipUserIndices:
+            nextUserIndex = (nextUserIndex + 1) % len(users)
+        nextUser = users[nextUserIndex]
+        emit("s2cAveragePositions", {"positions": json["positions"], "nextUser": nextUser}, broadcast=True)
+
+    '''
     for position in json["positions"]:
         username = json["user"]
         userPosition = Position(position["positionX"], position["positionY"], position["positionZ"])
@@ -101,7 +110,6 @@ def c2sinformpositions(json):
         for pi in range(len(positions)):
 
             username, position = positions[pi].items()
-            #positon = 1, 0, 1
             if position["count"] >= len(users) / 2:
                 position["userPosition"].x = position["userPosition"].x / position["count"]
                 position["userPosition"].y = position["userPosition"].y / position["count"]
@@ -114,6 +122,7 @@ def c2sinformpositions(json):
             nextUserIndex = (nextUserIndex + 1) % len(users)
         nextUser = users[nextUserIndex] 
         emit("s2cAveragePositions", {"positions": aliveUsers, "nextUser": nextUser}, broadcast=True)
-
+    '''
+        
 if __name__ == "__main__":
     socketio.run(app, debug=True, port=5001)
