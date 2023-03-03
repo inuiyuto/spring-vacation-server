@@ -62,7 +62,7 @@ def c2sRequestJoin(json):
     print(json)
     username = json["user"]
     users.append(username)
-    emit("s2cInformUsers", {"users": [{"user": username} for username in users]}, broadcast=True)
+    emit("s2cInformUsers", {"users": [username for username in users]}, broadcast=True)
 
 
 @socketio.on("c2sOK")
@@ -72,7 +72,7 @@ def c2sok(json):
     OKCount += 1
     if OKCount == len(users) :
         firstUser = users[nextUserIndex]
-        emit("s2cStart", {"users": [{"user": username} for username in users], "firstUser": firstUser}, broadcast=True)
+        emit("s2cStart", {"users": [username for username in users], "firstUser": firstUser}, broadcast=True)
 
 @socketio.on("c2sPull")
 def c2spull(json):
