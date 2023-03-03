@@ -33,7 +33,7 @@ CORS(app, resources={r"/*":{"origins":"*"}})
 socketio = SocketIO(app, cors_allowed_origins="*")
 users = []
 skipUserIndices = []
-positions = []
+aliveUserPositions = {}
 OKCount = 0
 informCount = 0
 nextUserIndex = 0
@@ -88,41 +88,36 @@ def c2sInformPositions(json):
     global informCount, nextUserIndex
 
     informCount += 1
+
+    for position in json["positions"]:
+        username = position["user"]
+        userPosition = Position(position["positionX"], position["positionY"], position["positionZ"])
+        if username in aliveUserPositions.keys():
+            prevUserPosition = aliveUserPositions[username]["position"]
+            count = aliveUserPositions[username]["count"]
+            aliveUserPositions[username] = { "user": username, "position": prevUserPosition + userPosition, "count" : count + 1}
+        else:
+            aliveUserPositions[username] = { "user": username, "position" : userPosition , "count" : 1}
+
     if informCount == len(users):
         informCount = 0
-        nextUserIndex = (nextUserIndex + 1) % len(users)
-        while nextUserIndex in skipUserIndices:
-            nextUserIndex = (nextUserIndex + 1) % len(users)
-        nextUser = users[nextUserIndex]
-        emit("s2cAveragePositions", {"positions": json["positions"], "nextUser": nextUser}, broadcast=True)
-
-    '''
-    for position in json["positions"]:
-        username = json["user"]
-        userPosition = Position(position["positionX"], position["positionY"], position["positionZ"])
-        if username in positions.keys():
-            positions[username]["userPosition"] = positions[username]["userPosition"] + userPosition
-            positions[username]["count"] += 1
-        else:
-            positions.append({username: {"userPosition" : userPosition, "count" : 1}})
-    if informCount == len(users):
-        aliveUsers = []
-        for pi in range(len(positions)):
-
-            username, position = positions[pi].items()
-            if position["count"] >= len(users) / 2:
-                position["userPosition"].x = position["userPosition"].x / position["count"]
-                position["userPosition"].y = position["userPosition"].y / position["count"]
-                position["userPosition"].z = position["userPosition"].z / position["count"]
-                aliveUsers.append({ "user": username, "positionX": position["userPosition"].x, "positionY": position["userPosition"].y, "positionZ": position["userPosition"].z})
+        averagedUserPositions = []
+        for aliveUserPosition in aliveUserPositions.values():
+            if aliveUserPosition["count"] >= len(users) / 2:
+                username = aliveUserPosition["user"]
+                x = aliveUserPosition["position"].x / aliveUserPosition["count"]
+                y = aliveUserPosition["position"].y / aliveUserPosition["count"]
+                z = aliveUserPosition["position"].z / aliveUserPosition["count"]
+                averagedUserPositions.append({"user" : username, "positionX" : x, "positionY": y, "positionZ" : z})
             else:
                 skipUserIndices.append(users.index(username))
         nextUserIndex = (nextUserIndex + 1) % len(users)
         while nextUserIndex in skipUserIndices:
             nextUserIndex = (nextUserIndex + 1) % len(users)
         nextUser = users[nextUserIndex] 
-        emit("s2cAveragePositions", {"positions": aliveUsers, "nextUser": nextUser}, broadcast=True)
-    '''
+        emit("s2cAveragePositions", {"positions": averagedUserPositions, "nextUser": nextUser}, broadcast=True)
+        aliveUserPositions.clear()
+
         
 if __name__ == "__main__":
     socketio.run(app, debug=True, port=5001)
