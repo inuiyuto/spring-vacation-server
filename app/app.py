@@ -2,19 +2,41 @@ from flask import Flask, request
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
 
+class Position:
+
+    def __init__(self):
+        self.x = 0
+        self.y = 0
+        self.z = 0
+
+    def __init__(self, x, y, z):
+        self.x = x
+        self.y = y
+        self.z = z
+
+    def __add__(self, other):
+        # 同じクラスかどうかの判定
+        if type(other) == Position: 
+            self.x += other.x
+            self.y += other.y
+            self.z += other.z
+            return self
+        raise TypeError()
+
+    def set(self, a, b):
+        self.a = a
+        self.b = b
+
 app = Flask(__name__)
 app.config["SECRET_KEY"] = "secret!"
 CORS(app, resources={r"/*":{"origins":"*"}})
 socketio = SocketIO(app, cors_allowed_origins="*")
 users = []
-OKusers = []
-OKnum = 0
-informNum = 0
-nextUserNum = 0
-positionX = []
-positionY = []
-positionZ = []
-#TODO : declare global for global variable(primitive)(参照ならできる)
+skipUserIndices = []
+positions = []
+OKCount = 0
+informCount = 0
+nextUserIndex = 0
 
 @app.route("/")
 def hello():
@@ -28,18 +50,15 @@ def connected():
 @socketio.on("disconnect")
 def disconnected(json):
     #TODO: ぶち切ってくる場合usernameがないのでrequest.sidで名前とのmapを用意しておいて、適宜削除する必要あり
-    global OKnum
+    global OKCount
     """event listener when client disconnects to the server"""
     print("user disconnected")
     username = json["user"]
-    if username in OKusers :
-        OKnum -= 1
-        OKusers.remove(username)
     users.remove(username)
     emit("s2cInformUsers", {"users": [{"user": username} for username in users]}, broadcast=True)
 
 @socketio.on("c2sRequestJoin")
-def c2srequestjoin(json):
+def c2sRequestJoin(json):
     print(json)
     username = json["user"]
     users.append(username)
@@ -49,27 +68,15 @@ def c2srequestjoin(json):
 @socketio.on("c2sOK")
 def c2sok(json):
     print(json)
-    global OKnum, nextUserNum
-    username = json["user"]
-    if username not in OKusers :
-        OKusers.append(username)
-        OKnum += 1
-    if OKnum == len(users) :
-        firstUser = users[nextUserNum]
-        nextUserNum += 1
-        while True :
-            if nextUserNum > len(users) :
-                nextUserNum = 0
-            #elif 次の人が死んでいた場合
-                #nextUserNum += 1
-            else :
-                break
+    global OKCount, nextUserIndex
+    OKCount += 1
+    if OKCount == len(users) :
+        firstUser = users[nextUserIndex]
         emit("s2cStart", {"users": [{"user": username} for username in users], "firstUser": firstUser}, broadcast=True)
 
 @socketio.on("c2sPull")
 def c2spull(json):
     print(json)
-    #書き方違う?
     username = json["user"]
     directionX = json["pullInfo"]["directionX"]
     directionY = json["pullInfo"]["directionY"]
@@ -79,51 +86,34 @@ def c2spull(json):
 @socketio.on("c2sInformPositions")
 def c2sinformpositions(json):
     print(json)
-    #書き方違う?
-    global informNum
-    positions = json["positions"]
-    informNum += 1
-    i = 0
-    while True :
-        i += 1
-        #書き方違う?
-        for position in positions :
-            username = position["user"]
-            l = users.index(username)
-            positionX[l] = position["positionX"]
-            positionY[l] = position["positionY"]
-            positionZ[l] = position["positionZ"]
-        if i == len(users) :
-            break
+    global informCount
+    informCount += 1
+    for position in json["positions"]:
+        username = json["user"]
+        userPosition = Position(position["positionX"], position["positionY"], position["positionZ"])
+        if username in positions.keys():
+            positions[username]["userPosition"] = positions[username]["userPosition"] + userPosition
+            positions[username]["count"] += 1
+        else:
+            positions.append({username: {"userPosition" : userPosition, "count" : 1}})
+    if informCount == len(users):
+        aliveUsers = []
+        for pi in range(len(positions)):
 
-    if informNum == len(users) :
-        i = 0
-        while True :
-            positionX[i] = positionX[i] / len(users)
-            positionY[i] = positionY[i] / len(users)
-            positionZ[i] = positionZ[i] / len(users)
-            i += 1
-            if i == len(users) :
-                break
-        
-        #死んだ処理、ゲーム終了と結果送信の処理
-
-        #次の人を決める
-        nextUser = users[nextUserNum] 
-        nextUserNum += 1
-        while True :
-            if nextUserNum > len(users) :
-                nextUserNum = 0
-            #elif 次の人が死んでいた場合
-                #nextUserNum += 1
-            else :
-                break
-        #書き方違う?
-        emit("s2cAveragePositions", {"positions": 
-                                     [{"user": username for username in users}, {"positionX": positionX for positionX in positionX} , 
-                                      {"potisionY": positionY for positionY in positionY} , {"positionZ": positionZ for positionZ in positionZ}],
-                                        "nextUser": nextUser }, broadcast=True)
-
+            username, position = positions[pi].items()
+            #positon = 1, 0, 1
+            if position["count"] >= len(users) / 2:
+                position["userPosition"].x = position["userPosition"].x / position["count"]
+                position["userPosition"].y = position["userPosition"].y / position["count"]
+                position["userPosition"].z = position["userPosition"].z / position["count"]
+                aliveUsers.append({ "user": username, "positionX": position["userPosition"].x, "positionY": position["userPosition"].y, "positionZ": position["userPosition"].z})
+            else:
+                skipUserIndices.append(users.index(username))
+        nextUserIndex = (nextUserIndex + 1) % len(users)
+        while nextUserIndex in skipUserIndices:
+            nextUserIndex = (nextUserIndex + 1) % len(users)
+        nextUser = users[nextUserIndex] 
+        emit("s2cAveragePositions", {"positions": aliveUsers, "nextUser": nextUser}, broadcast=True)
 
 if __name__ == "__main__":
     socketio.run(app, debug=True, port=5001)
