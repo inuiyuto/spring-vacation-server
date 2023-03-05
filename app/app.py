@@ -1,36 +1,13 @@
 from flask import Flask, request
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
-
-class Position:
-
-    def __init__(self):
-        self.x = 0
-        self.y = 0
-        self.z = 0
-
-    def __init__(self, x, y, z):
-        self.x = x
-        self.y = y
-        self.z = z
-
-    def __add__(self, other):
-        # 同じクラスかどうかの判定
-        if type(other) == Position: 
-            self.x += other.x
-            self.y += other.y
-            self.z += other.z
-            return self
-        raise TypeError()
-
-    def set(self, a, b):
-        self.a = a
-        self.b = b
+from myPackage import Position, GameState, DisconnectManager
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = "secret!"
 CORS(app, resources={r"/*":{"origins":"*"}})
 socketio = SocketIO(app, cors_allowed_origins="*")
+disconnectManager = DisconnectManager()
 users = []
 skipUserIndices = []
 aliveUserPositions = {}
@@ -47,30 +24,72 @@ def connected():
     print("Connected")
 
 @socketio.on("disconnect")
-def disconnected(json):
-    #TODO: ぶち切ってくる場合usernameがないのでrequest.sidで名前とのmapを用意しておいて、適宜削除する必要あり
-    global OKCount
-    """event listener when client disconnects to the server"""
-    username = json["user"]
+def disconnected():
+    global OKCount, nextUserIndex
+    username = disconnectManager.userFromSocketIDs.pop(request.sid)
     users.remove(username)
-    emit("s2cInformUsers", {"users": [{"user": username} for username in users]}, broadcast=True)
+    userGameState = disconnectManager.userGameStates.pop(username)
+    print(f"disconnected: username {username} , gameState: {userGameState}")
+    if userGameState == GameState.JOINED:
+        if OKCount == len(users) and OKCount != 0:
+            OKCount = 0
+            disconnectManager.changeAllStates(users, GameState.START)
+            firstUser = users[nextUserIndex]
+            disconnectManager.setPuller(firstUser)
+            emit("s2cStart", {"users": [username for username in users], "firstUser": firstUser}, broadcast=True)
+        else:
+            emit("s2cInformUsers", {"users": [{"user": username} for username in users]}, broadcast=True)
+    elif userGameState == GameState.READY:
+        OKCount -= 1
+        if OKCount == len(users) and OKCount != 0:
+            OKCount = 0
+            disconnectManager.changeAllStates(users, GameState.START)
+            firstUser = users[nextUserIndex]
+            disconnectManager.setPuller(firstUser)
+            emit("s2cStart", {"users": [username for username in users], "firstUser": firstUser}, broadcast=True)
+        else:
+            emit("s2cInformUsers", {"users": [{"user": username} for username in users]}, broadcast=True)
+    elif userGameState == GameState.START:
+        firstUser = disconnectManager.puller
+        if username == disconnectManager.puller:
+            while nextUserIndex in skipUserIndices:
+                nextUserIndex = (nextUserIndex + 1) % len(users)
+            firstUser = users[nextUserIndex]
+            disconnectManager.setPuller(firstUser)
+        emit("s2cStart", {"users": [username for username in users], "firstUser": firstUser}, broadcast=True)
+    elif userGameState == GameState.PLAYING:
+        nextUser = disconnectManager.puller
+        averagedUserPositions = disconnectManager.userPositions
+        if username == disconnectManager.puller:
+            while nextUserIndex in skipUserIndices:
+                nextUserIndex = (nextUserIndex + 1) % len(users)
+            nextUser = users[nextUserIndex]
+            disconnectManager.setPuller(nextUser)
+        emit("s2cAveragePositions", {"positions": [averagedUserPosition for averagedUserPosition in averagedUserPositions if averagedUserPosition["user"] != username], "nextUser": nextUser}, broadcast=True)
+
 
 @socketio.on("c2sRequestJoin")
 def c2sRequestJoin(json):
     print(json)
     username = json["user"]
     users.append(username)
+    disconnectManager.append(username, request.sid)
+    print(users)
     emit("s2cInformUsers", {"users": [username for username in users]}, broadcast=True)
 
 
 @socketio.on("c2sOK")
 def c2sOK(json):
     print(json)
+    username = json["user"]
     global OKCount, nextUserIndex
     OKCount += 1
-    print(f"okcount: {OKCount}, users: {users}")
-    if OKCount == len(users) :
+    disconnectManager.changeState(username, GameState.READY)
+    if OKCount == len(users):
+        OKCount = 0
+        disconnectManager.changeAllStates(users, GameState.START)
         firstUser = users[nextUserIndex]
+        disconnectManager.setPuller(firstUser)
         emit("s2cStart", {"users": [username for username in users], "firstUser": firstUser}, broadcast=True)
 
 @socketio.on("c2sPull")
@@ -114,7 +133,10 @@ def c2sInformPositions(json):
         nextUserIndex = (nextUserIndex + 1) % len(users)
         while nextUserIndex in skipUserIndices:
             nextUserIndex = (nextUserIndex + 1) % len(users)
-        nextUser = users[nextUserIndex] 
+        nextUser = users[nextUserIndex]
+        disconnectManager.setPuller(nextUser)
+        disconnectManager.setUserPositions(averagedUserPositions)
+        disconnectManager.changeAllStates(users, GameState.PLAYING)
         emit("s2cAveragePositions", {"positions": averagedUserPositions, "nextUser": nextUser}, broadcast=True)
         aliveUserPositions.clear()
 
