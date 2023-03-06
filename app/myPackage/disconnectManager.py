@@ -1,4 +1,4 @@
-from gameState import GameState
+from app.myPackage.gameState import GameState
 
 class DisconnectManager:
     def __init__(self):

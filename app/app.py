@@ -1,7 +1,7 @@
 from flask import Flask, request
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
-from myPackage import Position, GameState, DisconnectManager
+from app.myPackage import Position, GameState, DisconnectManager
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = "secret!"
