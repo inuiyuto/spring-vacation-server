@@ -10,6 +10,7 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 disconnectManager = DisconnectManager()
 users = []
 skipUserIndices = []
+disconnectedUserIndices = []
 aliveUserPositions = {}
 OKCount = 0
 informCount = 0
@@ -26,11 +27,17 @@ def connected():
 @socketio.on("disconnect")
 def disconnected():
     global OKCount, nextUserIndex
-    username = disconnectManager.userFromSocketIDs.pop(request.sid)
-    users.remove(username)
-    userGameState = disconnectManager.userGameStates.pop(username)
+
+
+    # TODO: KeyError
+    print(disconnectManager.userFromSocketIDs)
+    username = disconnectManager.userFromSocketIDs[request.sid]
+
+
+    userGameState = disconnectManager.userGameStates[username]
     print(f"disconnected: username {username} , gameState: {userGameState}")
     if userGameState == GameState.JOINED:
+        users.remove(username)
         if OKCount == len(users) and OKCount != 0:
             OKCount = 0
             disconnectManager.changeAllStates(users, GameState.START)
@@ -40,6 +47,7 @@ def disconnected():
         else:
             emit("s2cInformUsers", {"users": [{"user": username} for username in users]}, broadcast=True)
     elif userGameState == GameState.READY:
+        users.remove(username)
         OKCount -= 1
         if OKCount == len(users) and OKCount != 0:
             OKCount = 0
@@ -50,17 +58,35 @@ def disconnected():
         else:
             emit("s2cInformUsers", {"users": [{"user": username} for username in users]}, broadcast=True)
     elif userGameState == GameState.START:
+        skipUserIndices.append(users.index(username))
+        disconnectedUserIndices.append(users.index(username))
+
+        if len(users) - len(skipUserIndices) <= 1:
+            result = makeResult()
+            emit("s2cInformResult", {"result" : result}, broadcast=True)
+            ## TODO: clearGame()
+
         firstUser = disconnectManager.puller
         if username == disconnectManager.puller:
+            nextUserIndex = (nextUserIndex + 1) % len(users)
             while nextUserIndex in skipUserIndices:
                 nextUserIndex = (nextUserIndex + 1) % len(users)
             firstUser = users[nextUserIndex]
             disconnectManager.setPuller(firstUser)
         emit("s2cStart", {"users": [username for username in users], "firstUser": firstUser}, broadcast=True)
     elif userGameState == GameState.PLAYING:
+        skipUserIndices.append(users.index(username))
+        disconnectedUserIndices.append(users.index(username))
+
+        if len(users) - len(skipUserIndices) <= 1:
+            result = makeResult()
+            emit("s2cInformResult", {"result" : result}, broadcast=True)
+            ## TODO: clearGame()
+
         nextUser = disconnectManager.puller
         averagedUserPositions = disconnectManager.userPositions
         if username == disconnectManager.puller:
+            nextUserIndex = (nextUserIndex + 1) % len(users)
             while nextUserIndex in skipUserIndices:
                 nextUserIndex = (nextUserIndex + 1) % len(users)
             nextUser = users[nextUserIndex]
@@ -118,7 +144,7 @@ def c2sInformPositions(json):
         else:
             aliveUserPositions[username] = { "user": username, "position" : userPosition , "count" : 1}
 
-    if informCount == len(users):
+    if informCount == len(users) - len(disconnectedUserIndices):
         informCount = 0
         averagedUserPositions = []
         for aliveUserPosition in aliveUserPositions.values():
@@ -128,8 +154,21 @@ def c2sInformPositions(json):
                 y = aliveUserPosition["position"].y / aliveUserPosition["count"]
                 z = aliveUserPosition["position"].z / aliveUserPosition["count"]
                 averagedUserPositions.append({"user" : username, "positionX" : x, "positionY": y, "positionZ" : z})
-            else:
-                skipUserIndices.append(users.index(username))
+        
+        aliveUsers = []
+        for averagedUserPosition in averagedUserPositions:
+            username = averagedUserPosition["user"]
+            aliveUsers.append(username)
+        for username in users:
+            if username not in aliveUsers:
+                if users.index(username) not in skipUserIndices:
+                    skipUserIndices.append(users.index(username))
+
+        if len(aliveUsers) <= 1:
+            result = makeResult()
+            emit("s2cInformResult", {"result" : result}, broadcast=True)
+            ## TODO: clearGame()
+        
         nextUserIndex = (nextUserIndex + 1) % len(users)
         while nextUserIndex in skipUserIndices:
             nextUserIndex = (nextUserIndex + 1) % len(users)
@@ -139,6 +178,23 @@ def c2sInformPositions(json):
         disconnectManager.changeAllStates(users, GameState.PLAYING)
         emit("s2cAveragePositions", {"positions": averagedUserPositions, "nextUser": nextUser}, broadcast=True)
         aliveUserPositions.clear()
+
+
+def makeResult():
+    ranking = []
+    disconnectedUsers = []
+    for i in skipUserIndices:
+        if i in disconnectedUserIndices:
+            disconnectedUsers.append(users[i])
+        else:
+            ranking.append(users[i])
+    for user in users:
+        if users.index(user) not in skipUserIndices:
+            ranking.append(user)
+    ranking = disconnectedUsers + ranking
+    ranking.reverse()
+    result = [{"user": ranking[i], "rank": i + 1} for i in range(len(ranking))]
+    return result
 
         
 if __name__ == "__main__":
