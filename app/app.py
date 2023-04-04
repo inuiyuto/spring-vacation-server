@@ -28,8 +28,6 @@ def connected():
 def disconnected():
     global OKCount, nextUserIndex
 
-
-    # TODO: KeyError
     print(disconnectManager.userFromSocketIDs)
     userName = disconnectManager.userFromSocketIDs[request.sid]
 
