@@ -28,7 +28,7 @@ def connected():
 def disconnected():
     global OKCount, nextUserIndex
 
-    print(disconnectManager.userFromSocketIDs)
+    #print(disconnectManager.userFromSocketIDs)
     userName = disconnectManager.userFromSocketIDs[request.sid]
 
 
@@ -62,7 +62,7 @@ def disconnected():
         if len(users) - len(skipUserIndices) <= 1:
             result = makeResult()
             emit("s2cInformResult", {"result" : result}, broadcast=True)
-            ## TODO: clearGame()
+            clearGame()
 
         firstUser = disconnectManager.puller
         if userName == disconnectManager.puller:
@@ -79,7 +79,7 @@ def disconnected():
         if len(users) - len(skipUserIndices) <= 1:
             result = makeResult()
             emit("s2cInformResult", {"result" : result}, broadcast=True)
-            ## TODO: clearGame()
+            clearGame()
 
         nextUser = disconnectManager.puller
         averagedUserPositions = disconnectManager.userPositions
@@ -94,18 +94,15 @@ def disconnected():
 
 @socketio.on("c2sRequestJoin")
 def c2sRequestJoin(json):
-    print(json)
     userName = json["user"]
     users.append(userName)
     disconnectManager.append(userName, request.sid)
-    print(users)
     emit("s2cInformUsers", {"users": [{"user": userName, "isReady": disconnectManager.userGameStates[userName] == GameState.READY} for userName in users]}, broadcast=True)
 
 
 
 @socketio.on("c2sOK")
 def c2sOK(json):
-    print(json)
     userName = json["user"]
     global OKCount, nextUserIndex
     OKCount += 1
@@ -121,7 +118,6 @@ def c2sOK(json):
 
 @socketio.on("c2sPull")
 def c2sPull(json):
-    print(json)
     userName = json["user"]
     directionX = json["pullInfo"]["directionX"]
     directionY = json["pullInfo"]["directionY"]
@@ -130,7 +126,6 @@ def c2sPull(json):
 
 @socketio.on("c2sInformPositions")
 def c2sInformPositions(json):
-    print(json)
     global informCount, nextUserIndex
 
     informCount += 1
@@ -168,7 +163,8 @@ def c2sInformPositions(json):
         if len(aliveUsers) <= 1:
             result = makeResult()
             emit("s2cInformResult", {"result" : result}, broadcast=True)
-            ## TODO: clearGame()
+            clearGame()
+            return
         
         nextUserIndex = (nextUserIndex + 1) % len(users)
         while nextUserIndex in skipUserIndices:
@@ -197,6 +193,15 @@ def makeResult():
     result = [{"user": ranking[i], "rank": i + 1} for i in range(len(ranking))]
     return result
 
-        
+def clearGame():
+    global OKCount, informCount, nextUserIndex
+    users.clear()
+    skipUserIndices.clear()
+    disconnectedUserIndices.clear()
+    aliveUserPositions.clear()
+    OKCount = 0
+    informCount = 0
+    nextUserIndex = 0
+     
 if __name__ == "__main__":
     socketio.run(app, debug=True, port=5001)
