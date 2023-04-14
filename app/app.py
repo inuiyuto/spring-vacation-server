@@ -63,6 +63,7 @@ def disconnected():
             result = makeResult()
             emit("s2cInformResult", {"result" : result}, broadcast=True)
             clearGame()
+            return
 
         firstUser = disconnectManager.puller
         if userName == disconnectManager.puller:
@@ -80,6 +81,7 @@ def disconnected():
             result = makeResult()
             emit("s2cInformResult", {"result" : result}, broadcast=True)
             clearGame()
+            return
 
         nextUser = disconnectManager.puller
         averagedUserPositions = disconnectManager.userPositions
